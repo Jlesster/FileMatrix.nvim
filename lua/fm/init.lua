@@ -31,6 +31,10 @@ local defaults = {
     diagnostics = {
         size = 10,
         workspace = true,
+        index = {
+            enabled = false,
+            max_files = 2000,
+        },
         roots = {
             ".git", "Cargo.toml", "go.mod",
             "package.json", "meson.build",
@@ -112,6 +116,76 @@ end
 local SEV = { "E", "W", "I", "H" }
 local SEVHL = { "DiagnosticError", "DiagnosticWarn", "DiagnosticInfo", "DiagnosticHint" }
 local diag
+local indexed = {}
+
+local function project_files(root, limit)
+    local files = {}
+    local out = vim.system({ "git", "ls-files", "-co", "--exclude-standard" }, { cwd = root, text = true }):wait()
+    if out.code == 0 then
+        for f in vim.gsplit(out.stdout or "", "\n", { trimempty = true }) do
+            files[#files + 1] = vim.fs.joinpath(root, f)
+            if #files >= limit then break end
+        end
+    else -- not a git repo: walk the tree, skipping the usual heavy directories
+        local skip = { [".git"] = true, node_modules = true, target = true, build = true, [".cache"] = true }
+        for name, t in vim.fs.dir(root, { depth = 8, skip = function(n) return not skip[n] end }) do
+            if t == "file" then
+                files[#files + 1] = vim.fs.joinpath(root, name)
+                if #files >= limit then break end
+            end
+        end
+    end
+    return files
+end
+
+local function index_workspace()
+    local root, files = vim.fn.getcwd(), nil
+    for _, client in ipairs(vim.lsp.get_clients()) do
+        if client:supports_method("workspace/diagnostic") then
+            vim.lsp.buf.workspace_diagnostics({ client_id = client.id })
+        else
+            local fts = client.config.filetypes
+            if fts and #fts > 0 then
+                files = files or project_files(root, cfg.diagnostics.index.max_files)
+                local seen = indexed[client.id] or {}
+                indexed[client.id] = seen
+
+                local todo = {}
+                for _, f in ipairs(files) do
+                    local ft = vim.filetype.match({ filename = f })
+                    local b = vim.fn.bufnr(f)
+                    local open = b > 0 and api.nvim_buf_is_loaded(b)
+                    if ft and not seen[f] and not open and vim.list_contains(fts, ft) then
+                        todo[#todo + 1] = { f, ft }
+                    end
+                end
+
+                local i = 1
+                local function step() -- 25 files per tick so the UI never freezes
+                    for _ = 1, 25 do
+                        local e = todo[i]
+                        if not e then return end
+                        i = i + 1
+                        local fh = io.open(e[1], "rb")
+                        if fh then
+                            local text = fh:read("a")
+                            fh:close()
+                            seen[e[1]] = true
+                            client:notify("textDocument/didOpen", {
+                                textDocument = {
+                                    uri = vim.uri_from_fname(e[1]),
+                                    languageId = e[2], version = 0, text = text,
+                                },
+                            })
+                        end
+                    end
+                    vim.schedule(step)
+                end
+                step()
+            end
+        end
+    end
+end
 
 function M.diagnostics(opts)
     local ws = cfg.diagnostics.workspace
