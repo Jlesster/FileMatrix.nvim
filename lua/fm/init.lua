@@ -31,10 +31,7 @@ local defaults = {
     diagnostics = {
         size = 10,
         workspace = true,
-        index = {
-            enabled = false,
-            max_files = 2000,
-        },
+        -- workspace mode: ask running LSP clients for every project file's diagnostics, not just open buffers
         roots = {
             ".git", "Cargo.toml", "go.mod",
             "package.json", "meson.build",
@@ -74,6 +71,23 @@ local layouts = {
             title_pos = "center",
         }
     end,
+    auto = function(o)
+        local h = #o.lines
+        local w = 0
+        for _, l in ipairs(o.lines) do
+            w = math.max(w, #l)
+        end
+        return {
+            relative = "editor",
+            width = w,
+            height = h,
+            col = math.floor((vim.o.columns - w) / 2),
+            row = math.floor((vim.o.lines - h) / 2),
+            border = cfg.border,
+            title = o.title,
+            title_pos = "center",
+        }
+    end,
 }
 
 local function fill(buf, lines, marks)
@@ -96,7 +110,12 @@ function M.view(o)
     local wincfg = layouts[layout] and layouts[layout](o)
         or { split = layout, win = -1, [horiz and "height" or "width"] = o.size or (horiz and 10 or 40) }
     local win = api.nvim_open_win(buf, enter, wincfg)
-    for k, val in pairs(cfg.win_opts) do vim.wo[win][k] = val end
+    for k, val in pairs(cfg.win_opts) do
+        local ok, err = pcall(function() vim.wo[win][k] = val end)
+        if not ok then
+            vim.notify_once(("fm: invalid win_opts.%s: %s"):format(k, err), vim.log.levels.WARN)
+        end
+    end
     if o.title and not layouts[layout] then vim.wo[win].winbar = " " .. o.title .. " " end
 
     local v = { buf = buf, win = win }
@@ -116,76 +135,6 @@ end
 local SEV = { "E", "W", "I", "H" }
 local SEVHL = { "DiagnosticError", "DiagnosticWarn", "DiagnosticInfo", "DiagnosticHint" }
 local diag
-local indexed = {}
-
-local function project_files(root, limit)
-    local files = {}
-    local out = vim.system({ "git", "ls-files", "-co", "--exclude-standard" }, { cwd = root, text = true }):wait()
-    if out.code == 0 then
-        for f in vim.gsplit(out.stdout or "", "\n", { trimempty = true }) do
-            files[#files + 1] = vim.fs.joinpath(root, f)
-            if #files >= limit then break end
-        end
-    else -- not a git repo: walk the tree, skipping the usual heavy directories
-        local skip = { [".git"] = true, node_modules = true, target = true, build = true, [".cache"] = true }
-        for name, t in vim.fs.dir(root, { depth = 8, skip = function(n) return not skip[n] end }) do
-            if t == "file" then
-                files[#files + 1] = vim.fs.joinpath(root, name)
-                if #files >= limit then break end
-            end
-        end
-    end
-    return files
-end
-
-local function index_workspace()
-    local root, files = vim.fn.getcwd(), nil
-    for _, client in ipairs(vim.lsp.get_clients()) do
-        if client:supports_method("workspace/diagnostic") then
-            vim.lsp.buf.workspace_diagnostics({ client_id = client.id })
-        else
-            local fts = client.config.filetypes
-            if fts and #fts > 0 then
-                files = files or project_files(root, cfg.diagnostics.index.max_files)
-                local seen = indexed[client.id] or {}
-                indexed[client.id] = seen
-
-                local todo = {}
-                for _, f in ipairs(files) do
-                    local ft = vim.filetype.match({ filename = f })
-                    local b = vim.fn.bufnr(f)
-                    local open = b > 0 and api.nvim_buf_is_loaded(b)
-                    if ft and not seen[f] and not open and vim.list_contains(fts, ft) then
-                        todo[#todo + 1] = { f, ft }
-                    end
-                end
-
-                local i = 1
-                local function step() -- 25 files per tick so the UI never freezes
-                    for _ = 1, 25 do
-                        local e = todo[i]
-                        if not e then return end
-                        i = i + 1
-                        local fh = io.open(e[1], "rb")
-                        if fh then
-                            local text = fh:read("a")
-                            fh:close()
-                            seen[e[1]] = true
-                            client:notify("textDocument/didOpen", {
-                                textDocument = {
-                                    uri = vim.uri_from_fname(e[1]),
-                                    languageId = e[2], version = 0, text = text,
-                                },
-                            })
-                        end
-                    end
-                    vim.schedule(step)
-                end
-                step()
-            end
-        end
-    end
-end
 
 function M.diagnostics(opts)
     local ws = cfg.diagnostics.workspace
@@ -620,7 +569,8 @@ local function save(buf)
     vim.schedule(function() preview(buf, ops) end)
 end
 
-local function content(p, max)
+local function content(p, max, enabled)
+    if not enabled then return end
     local st = uv.fs_stat(p)
     if not st then return { "" } end
     if st.type == "directory" then
@@ -654,14 +604,15 @@ local function update_panes(buf)
     local name = name_of(api.nvim_get_current_line())
     if not name then return close_panes(buf) end
 
+    local preview_enabled = st.preview_enabled
     local p = path(st.dir, name)
     if st.shown == p and st.p1 and api.nvim_win_is_valid(st.p1.win) then return end
     st.shown = p
     local pw, ph = api.nvim_win_get_width(win), api.nvim_win_get_height(win)
     local h = math.min(ph - 2, cfg.preview.max_height)
-    local l1, kids = content(p, h)
+    local l1, kids = content(p, h, preview_enabled)
     local first = kids and kids[1]
-    local l2 = first and first:sub(-1) == "/" and (content(path(p, first), h)) or nil
+    local l2 = first and first:sub(-1) == "/" and (content(path(p, first), h, preview_enabled)) or nil
     if not l2 and st.p2 then
         st.p2.close(); st.p2 = nil
     end
@@ -716,6 +667,10 @@ local function keymaps(buf)
         last[parent] = vim.fs.basename(st.dir) .. "/"
         M.open(parent)
     end)
+    map("P", function()
+        st.preview_enabled = not st.preview_enabled
+        update_panes(buf)
+    end)
     map("l", enter)
     map("<CR>", enter)
 end
@@ -746,7 +701,7 @@ function M.open(dir)
     for opt, val in pairs({ buftype = "acwrite", filetype = "bash", bufhidden = "hide", undofile = false }) do
         vim.bo[buf][opt] = val
     end
-    S[buf], by_dir[dir] = { dir = dir, origin = origin }, buf
+    S[buf], by_dir[dir] = { dir = dir, origin = origin, preview_enabled = cfg.preview.enabled }, buf
 
     local function au(ev, fn)
         api.nvim_create_autocmd(ev, { group = grp, buffer = buf, callback = fn })
