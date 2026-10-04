@@ -354,7 +354,7 @@ end
 
 local function init()
     local ic = cfg.icons
-    local base = require("FileMatrix.nvim.icons_data")
+    local base = require("FileMatrix.icons_data")
     -- built-in data stays the default; the config block only overrides on top of it
     data = {
         by_name = vim.tbl_extend("force", base.by_name, ic.by_name or {}),
