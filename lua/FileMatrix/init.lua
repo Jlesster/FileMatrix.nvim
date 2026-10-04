@@ -277,7 +277,8 @@ function M.list(o)
         marks = marks,
         layout = o.layout,
         title = o.title,
-        keys = { q = function() v.close() end, ["<CR>"] = pick, l = pick },
+        keys = vim.tbl_extend("force",
+            { q = function() v.close() end, ["<CR>"] = pick, l = pick }, o.keys or {}),
     })
     v.pick = pick
     function v.refresh(new)
