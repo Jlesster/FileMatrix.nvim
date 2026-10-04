@@ -473,8 +473,12 @@ function M.fuzzy_files()
         while api.nvim_win_is_valid(v.win) do
             local got, c = pcall(vim.fn.getcharstr)
             local changed = true
-            if not got or c == vim.keycode("<Esc>") or c == vim.keycode("<C-c>") then
+            if not got or c == vim.keycode("<C-c>") then
                 v.close()
+                return
+            elseif c == vim.keycode("<Esc>") then
+                api.nvim_buf_clear_namespace(v.buf, sel_ns, 0, -1)
+                api.nvim_win_set_config(v.win, { footer = " ", footer_pos = "left" })
                 return
             elseif c == vim.keycode("<CR>") then
                 if n > 0 then
