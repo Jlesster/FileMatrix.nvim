@@ -243,12 +243,20 @@ end
 local function build(o, items)
     local lines = vim.iter(items):map(o.format):totable()
     local marks = o.marks and o.marks(lines) or {}
+    local user_marks = #marks
     if o.icons and cfg.icons.enabled then
+        local pre = {}
         for i, item in ipairs(items) do
             local name = type(item) == "table" and item.name or tostring(item)
             local icon, hl = M.icon(name ~= "" and name or "[No Name]")
             lines[i] = icon .. " " .. lines[i]
+            pre[i] = #icon + 1
             marks[#marks+1] = { i - 1, 0, #icon + 1, hl }
+        end
+        for j = 1, user_marks do
+            local m = marks[j]
+            local p = pre[m[1] + 1]
+            if p then m[2], m[3] = m[2] + p, m[3] + p end
         end
     end
     return lines, marks
@@ -477,7 +485,7 @@ function M.fuzzy_files()
         end,
         on_select = function (f) vim.cmd.edit({ args = { vim.fs.joinpath(cwd, f) } }) end,
         icons = true,
-        keys = { ["/"] = function() search() end },
+        keys = { ["s"] = function() search() end },
     })
 end
 
@@ -573,8 +581,10 @@ local function render(buf)
     local st = S[buf]
     st.names = entries(st.dir)
     vim.bo[buf].undolevels = -1
-    api.nvim_buf_set_lines(buf, 0, -1, false, vim.iter(st.names):map(quote):totable())
-    vim.bo[buf].undolevels = vim.o.undolevels
+    local ok, err = pcall(
+        api.nvim_buf_set_lines, buf, 0, -1, false, vim.iter(st.names):map(quote):totable())
+    vim.bo[buf].undolevels = -123456
+    if not ok then error(err) end
     vim.bo[buf].modified = false
     st.shown = nil
     decorate(buf)
@@ -784,7 +794,9 @@ function M.open(dir)
 
     buf = api.nvim_create_buf(false, true)
     api.nvim_buf_set_name(buf, name)
-    for opt, val in pairs({ buftype = "acwrite", filetype = "bash", bufhidden = "hide", undofile = false }) do
+    for opt, val in pairs(
+        { buftype = "acwrite", filetype = "bash", bufhidden = "hide", undofile = false }
+    ) do
         vim.bo[buf][opt] = val
     end
     S[buf], by_dir[dir] = { dir = dir, origin = origin, preview_enabled = cfg.preview.enabled }, buf
