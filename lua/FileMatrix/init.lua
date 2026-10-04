@@ -424,9 +424,9 @@ end
 local MAX_ROWS = 200
 function M.fuzzy_files()
     local cwd = vim.fn.getcwd()
-    local ok, res = pcall(function ()
+    local ok, res = pcall(function()
         return vim.system(
-            { "rg", "--files", "--hidden", "-g", "!.git" }, { text = true, cwd = cwd}
+            { "rg", "--files", "--hidden", "-g", "!.git" }, { text = true, cwd = cwd }
         ):wait()
     end)
     if not ok or not res.stdout or res.stdout == "" then
@@ -435,32 +435,41 @@ function M.fuzzy_files()
     local files = vim.split(res.stdout, "\n", { trimempty = true })
     local function top(list) return vim.list_slice(list, 1, MAX_ROWS) end
     local v
+
     local function show(q)
         local matches = q == "" and files or vim.fn.matchfuzzy(files, q)
         v.refresh(top(matches))
         api.nvim_win_set_cursor(v.win, { 1, 0 })
         api.nvim_win_set_config(v.win, {
-            title = ("files (%d%d)"):format(#matches, #files), title_pos = "center",
+            title = ("files (%d/%d)"):format(#matches, #files), title_pos = "center",
             footer = " / " .. q .. " ", footer_pos = "left",
         })
         vim.cmd.redraw()
+        return #matches
     end
+
     local function move(d)
         local n = api.nvim_buf_line_count(v.buf)
         local row = math.min(math.max(api.nvim_win_get_cursor(v.win)[1] + d, 1), n)
         api.nvim_win_set_cursor(v.win, { row, 0 })
         vim.cmd.redraw()
     end
+
     local function search()
         local q = ""
-        local had_cl = vim.wo[v.win].cursorline
-        vim.wo[v.win].cursorline = true
-        show(q)
+        local n = show(q)
         while api.nvim_win_is_valid(v.win) do
             local got, c = pcall(vim.fn.getcharstr)
-            if not got or c == vim.keycode("<CR>") then
-                v.pick()
+            local changed = true
+            if not got or c == vim.keycode("<Esc>") or c == vim.keycode("<C-c>") then
+                v.close()
                 return
+            elseif c == vim.keycode("<CR>") then
+                if n > 0 then
+                    v.pick()
+                    return
+                end
+                changed = false
             elseif c == vim.keycode("<BS>") or c == vim.keycode("<C-h>") then
                 q = vim.fn.strcharpart(q, 0, vim.fn.strchars(q) - 1)
             elseif c == vim.keycode("<C-u>") then
@@ -476,21 +485,21 @@ function M.fuzzy_files()
             else
                 changed = false
             end
-            if changed then show(q) end
+            if changed then n = show(q) end
         end
-        if api.nvim_win_is_valid(v.win) then vim.wo[v.win].cursorline = had_cl end
     end
+
     v = M.list({
         items = top(files),
         layout = "float",
         title = ("files (%d)"):format(#files),
-        format = function (f) return f end,
-        marks = function (lines)
+        format = function(f) return f end,
+        marks = function(lines)
             local m = {}
             for i, l in ipairs(lines) do m[i] = { i - 1, 0, #(l:match("^.*/") or ""), "Comment" } end
             return m
         end,
-        on_select = function (f) vim.cmd.edit({ args = { vim.fs.joinpath(cwd, f) } }) end,
+        on_select = function(f) vim.cmd.edit({ args = { vim.fs.joinpath(cwd, f) } }) end,
         icons = true,
         keys = { ["/"] = function() search() end },
     })
@@ -846,7 +855,7 @@ function M.setup(opts)
             local name = api.nvim_buf_get_name(cur)
             M.open(S[cur] and S[cur].dir or (name ~= "" and vim.fs.dirname(name)) or vim.fn.getcwd())
         end,
-        files = M.files,
+        files = M.fuzzy_files,
         buffers = M.buffers,
         oldfiles = M.oldfiles,
         diagnostics = M.diagnostics,
