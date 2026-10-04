@@ -1,10 +1,10 @@
 local api, uv = vim.api, vim.uv
 local M = {}
-local grp = api.nvim_create_augroup("fm", { clear = true })
+local grp = api.nvim_create_augroup("FileMatrix", { clear = true })
 
-local ns = api.nvim_create_namespace("fm_view")
+local ns = api.nvim_create_namespace("FileMatrix_view")
 
----@class fm.Config
+---@class FileMatrix.Config
 ---@field border string
 ---@field float { width: number, height: number }
 ---@field win_opts table<string, any>
@@ -24,7 +24,7 @@ local defaults = {
         winhighlight = "CursorLine:Visual,Winbar:Title",
     },
     preview = { enabled = true, max_height = 17, debounce = 30 },
-    -- icons: built-in set lives in fm/icons_data.lua. Everything below is an optional override:
+    -- icons: built-in set lives in FileMatrix.nvim/icons_data.lua. Everything below is an optional override:
     --   dir / file          = { glyph, "#rrggbb" } replacing the folder / fallback-file icon
     --   by_name / by_ext    = tables merged over the built-in ones, { [key] = { glyph, "#rrggbb" } }
     icons = { enabled = true },
@@ -113,7 +113,7 @@ function M.view(o)
     for k, val in pairs(cfg.win_opts) do
         local ok, err = pcall(function() vim.wo[win][k] = val end)
         if not ok then
-            vim.notify_once(("fm: invalid win_opts.%s: %s"):format(k, err), vim.log.levels.WARN)
+            vim.notify_once(("FileMatrix: invalid win_opts.%s: %s"):format(k, err), vim.log.levels.WARN)
         end
     end
     if o.title and not layouts[layout] then vim.wo[win].winbar = " " .. o.title .. " " end
@@ -225,7 +225,7 @@ function M.diagnostics(opts)
     })
     diag = v
 
-    local g = api.nvim_create_augroup("fm_diag", { clear = true })
+    local g = api.nvim_create_augroup("FileMatrix_diag", { clear = true })
     api.nvim_create_autocmd("CursorMoved", { group = g, buffer = v.buf, callback = peek })
     api.nvim_create_autocmd("DiagnosticChanged", {
         group = g,
@@ -354,7 +354,7 @@ end
 
 local function init()
     local ic = cfg.icons
-    local base = require("fm.icons_data")
+    local base = require("FileMatrix.nvim.icons_data")
     -- built-in data stays the default; the config block only overrides on top of it
     data = {
         by_name = vim.tbl_extend("force", base.by_name, ic.by_name or {}),
@@ -464,7 +464,7 @@ local function remember(buf)
     if name then last[S[buf].dir] = name end
 end
 
-local inl = api.nvim_create_namespace("fm_icons")
+local inl = api.nvim_create_namespace("FileMatrix_icons")
 local function decorate(buf)
     if not cfg.icons.enabled then return end
     if not S[buf] or not api.nvim_buf_is_valid(buf) then return end
@@ -727,10 +727,10 @@ end
 
 api.nvim_create_autocmd("BufWriteCmd", { group = grp, pattern = "fs://*", callback = function(ev) save(ev.buf) end })
 
----@param opts? table partial fm.Config; anything omitted keeps its default
+---@param opts? table partial FileMatrix.Config; anything omitted keeps its default
 function M.setup(opts)
     if vim.fn.has("nvim-0.11") == 0 then
-        return vim.notify("fm.nvim needs Neovim 0.11+", vim.log.levels.ERROR)
+        return vim.notify("FileMatrix.nvim needs Neovim 0.11+", vim.log.levels.ERROR)
     end
     cfg = vim.tbl_deep_extend("force", vim.deepcopy(defaults), opts or {})
     ready, cache, ncache = false, {}, 0 -- icons re-init lazily with the new overrides
@@ -747,7 +747,7 @@ function M.setup(opts)
     }
     for name, lhs in pairs(cfg.keys) do
         if lhs and acts[name] then
-            vim.keymap.set("n", lhs, function() acts[name]() end, { desc = "fm: " .. name })
+            vim.keymap.set("n", lhs, function() acts[name]() end, { desc = "FileMatrix: " .. name })
         end
     end
 end
