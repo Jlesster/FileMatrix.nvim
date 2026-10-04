@@ -240,31 +240,42 @@ function M.diagnostics(opts)
     return v
 end
 
-function M.list(o)
-    local lines = vim.iter(o.items):map(o.format):totable()
+local function build(o, items)
+    local lines = vim.iter(items):map(o.format):totable()
     local marks = o.marks and o.marks(lines) or {}
     if o.icons and cfg.icons.enabled then
-        for i, item in ipairs(o.items) do
+        for i, item in ipairs(items) do
             local name = type(item) == "table" and item.name or tostring(item)
             local icon, hl = M.icon(name ~= "" and name or "[No Name]")
             lines[i] = icon .. " " .. lines[i]
-            marks[#marks + 1] = { i - 1, 0, #icon + 1, hl }
+            marks[#marks+1] = { i - 1, 0, #icon + 1, hl }
         end
     end
+    return lines, marks
+end
+
+function M.list(o)
+    local items = o.items
     local v
     local function pick()
-        local item = o.items[api.nvim_win_get_cursor(v.win)[1]]
+        local item = items[api.nvim_win_get_cursor(v.win)[1]]
         if not item then return end
         v.close()
         o.on_select(item)
     end
+    local lines, marks = build(o, items)
     v = M.view({
         lines = lines,
+        marks = marks,
         layout = o.layout,
         title = o.title,
-        marks = marks,
         keys = { q = function() v.close() end, ["<CR>"] = pick, l = pick },
     })
+    v.pick = pick
+    function v.refresh(new)
+        items = new
+        v.set(build(o, new))
+    end
     return v
 end
 
@@ -392,6 +403,81 @@ function M.buffers()
         format = function(b) return b.name ~= "" and vim.fs.basename(b.name) or "[No Name]" end,
         on_select = function(b) api.nvim_set_current_buf(b.bufnr) end,
         icons = true,
+    })
+end
+
+local MAX_ROWS = 200
+function M.fuzzy_files()
+    local cwd = vim.fn.getcwd()
+    local ok, res = pcall(function ()
+        return vim.system(
+            { "rg", "--files", "--hidden", "-g", "!.git" }, { text = true, cwd = cwd}
+        ):wait()
+    end)
+    if not ok or not res.stdout or res.stdout == "" then
+        return vim.notify("FileMatrix: no file found ~ (Is rg Installed?)", vim.log.levels.WARN)
+    end
+    local files = vim.split(res.stdout, "\n", { trimempty = true })
+    local function top(list) return vim.list_slice(list, 1, MAX_ROWS) end
+    local v
+    local function show(q)
+        local matches = q == "" and files or vim.fn.matchfuzzy(files, q)
+        v.refresh(top(matches))
+        api.nvim_win_set_cursor(v.win, { 1, 0 })
+        api.nvim_win_set_config(v.win, {
+            title = ("files (%d%d)"):format(#matches, #files), title_pos = "center",
+            footer = " / " .. q .. " ", footer_pos = "left",
+        })
+        vim.cmd.redraw()
+    end
+    local function move(d)
+        local n = api.nvim_buf_line_count(v.buf)
+        local row = math.min(math.max(api.nvim_win_get_cursor(v.win)[1] + d, 1), n)
+        api.nvim_win_set_cursor(v.win, { row, 0 })
+        vim.cmd.redraw()
+    end
+    local function search()
+        local q = ""
+        local had_cl = vim.wo[v.win].cursorline
+        vim.wo[v.win].cursorline = true
+        show(q)
+        while api.nvim_win_is_valid(v.win) do
+            local got, c = pcall(vim.fn.getcharstr)
+            if not got or c == vim.keycode("<CR>") then
+                v.pick()
+                return
+            elseif c == vim.keycode("<BS>") or c == vim.keycode("<C-h>") then
+                q = vim.fn.strcharpart(q, 0, vim.fn.strchars(q) - 1)
+            elseif c == vim.keycode("<C-u>") then
+                q = ""
+            elseif c == vim.keycode("<C-w>") or c == vim.keycode("<C-BS>") then
+                q = q:gsub("%s*%S*$", "")
+            elseif c == vim.keycode("<C-j>") or c == vim.keycode("<Down>") then
+                move(1); changed = false
+            elseif c == vim.keycode("<C-k>") or c == vim.keycode("<Up>") then
+                move(-1); changed = false
+            elseif c:byte(1) ~= 0x80 and not c:find("%c") then
+                q = q .. c
+            else
+                changed = false
+            end
+            if changed then show(q) end
+        end
+        if api.nvim_win_is_valid(v.win) then vim.wo[v.win].cursorline = had_cl end
+    end
+    v = M.list({
+        items = top(files),
+        layout = "float",
+        title = ("files (%d)"):format(#files),
+        format = function (f) return f end,
+        marks = function (lines)
+            local m = {}
+            for i, l in ipairs(lines) do m[i] = { i - 1, 0, #(l:match("^.*/") or ""), "Comment" } end
+            return m
+        end,
+        on_select = function (f) vim.cmd.edit({ args = { vim.fs.joinpath(cwd, f) } }) end,
+        icons = true,
+        keys = { ["/"] = function() search() end },
     })
 end
 
