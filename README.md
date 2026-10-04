@@ -1,17 +1,52 @@
-# Example vim.pack configuration
-## all options follow over to other plugin managers
+# 󰅩 FileMatrix.nvim
+
+[![Neovim](https://img.shields.io/badge/Neovim-0.11+-blue?logo=neovim)](https://neovim.io/)
+[![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
+[![Lua](https://img.shields.io/badge/Language-Lua-blue?logo=lua)](https://www.lua.org/)
+
+A lightweight, matrix-like file and resource manager for Neovim. `FileMatrix.nvim` provides a set of unified view primitives to explore your workspace, buffers, recent files, and diagnostics in a consistent, high-performance interface.
+
+## 󰏗 Features
+
+- 󰉖 **Filesystem Exploration**: A fast, editable view of your directories. Rename, move, or delete files directly within the buffer.
+- 󱔗 **Buffer & Recent Management**: Quickly switch between open buffers or jump back to recently edited files.
+- 󰅚 **Workspace Diagnostics**: A comprehensive view of all diagnostics across your project, grouped by root directory.
+- 󰊄 **Live Previews**: Peek into files or directories in a side-pane without leaving your current position.
+- 󰓧 **Dynamic Iconography**: Beautiful, color-coded icons based on file types and names, with support for Catppuccin palettes.
+- 󱎫 **High Performance**: Built for speed using Neovim 0.11+ APIs and optimized with debounced disk I/O.
+
+## 󱘚 Installation
+
+Using [vim.pack](https://github.com/folke/lazy.nvim):
+
 ```lua
-vim.pack.add({ "https://github.com/Jlesster/FileMatrix.nvim" })
+{
+    vim.pack.add({ src = "https://github.com/Jlesster/FileMatrix.nvim"})
+    require("FileMatrix").setup({
+        -- your configuration here
+    })
+}
+```
 
-require("fm").setup({
-    -- window chrome for every view (float, panes, splits)
-    border = "rounded",                  -- any nvim_open_win border: "single", "double", "none", ...
+Using [lazy.nvim](https://github.com/folke/lazy.nvim):
 
-    -- size of the float used by oldfiles and the rename/delete preview,
-    -- as a fraction of the editor
-    float = { width = 0.6, height = 0.4 },
+```lua
+{
+    "Jlesster/FileMatrix.nvim",
+    config = function()
+        require("FileMatrix").setup({
+            -- your configuration here
+        })
+    end,
+}
+```
 
-    -- options applied to every fm window; merged over the defaults per key
+## 󰒓 Configuration
+
+```lua
+require("FileMatrix").setup({
+    border = "rounded",                                -- Window border style
+    float = { width = 0.6, height = 0.4 },               -- Float window dimensions (relative to editor)
     win_opts = {
         cursorline = true,
         number = false,
@@ -20,39 +55,42 @@ require("fm").setup({
         wrap = false,
         winhighlight = "CursorLine:Visual,Winbar:Title",
     },
-
-    -- the two side panes shown while hovering an entry in the main view
     preview = {
-        enabled = true,                  -- false: no panes, no timer, no disk reads on cursor moves
-        max_height = 17,                 -- rows of content, clamped to the window height - 2
-        debounce = 30,                   -- ms to wait after the last cursor move before reading disk
+        enabled = true,
+        max_height = 17,
+        debounce = 30
     },
-
-    -- icons: the built-in set lives in fm/icons_data.lua; every key but `enabled` is an optional override
-    icons = {
-        enabled = true,                  -- false: no icons in the main view or pickers
-        -- dir  = { "\u{f07b}", "#89b4fa" },    -- folder icon: { glyph, "#rrggbb" }
-        -- file = { "\u{f15b}", "#a6adc8" },    -- fallback for unmatched files
-        -- by_name = { ["Makefile"] = { "\u{e779}", "#fab387" } },   -- merged over the built-in exact names
-        -- by_ext  = { lua = { "\u{e620}", "#51a0cf" } },            -- merged over the built-in extensions
-    },
-
-    -- diagnostics panel
+    icons = { enabled = true },                        -- Toggle built-in icons
     diagnostics = {
-        size = 10,                       -- rows in the bottom split
-        workspace = true,                -- false: only the current buffer
-        roots = {                        -- markers that start a new group; replaces the list entirely
-            ".git", "Cargo.toml", "go.mod", "package.json",
-            "meson.build", "Makefile", ".luarc.json", "CMakeLists.txt",
-        },
+        size = 10,                                      -- Height of diagnostics window
+        workspace = true,                               -- Scan entire project for diagnostics
+        roots = { ".git", "Cargo.toml", "package.json" }, -- Project root markers
     },
-
-    -- global keymaps, all off by default; set a lhs string to enable one
     keys = {
-        open = "<leader>e",              -- open the file manager at the current file's directory
-        buffers = "<leader>fb",          -- buffer picker
-        oldfiles = "<leader>fr",         -- recent files picker
-        diagnostics = "<leader>xd",      -- diagnostics panel
+        open = "<leader>fm",                             -- Open filesystem explorer
+        buffers = "<leader>fb",                        -- View open buffers
+        oldfiles = "<leader>fo",                        -- View recent files
+        diagnostics = "<leader>fd",                     -- View diagnostics
     },
 })
 ```
+
+## 󱎚 Keybindings (Default)
+
+### Filesystem Explorer (`open`)
+- `l` or `<CR>`: Enter directory or open file.
+- `h`: Go to parent directory.
+- `q`: Save changes and close (or close if unmodified).
+- `P`: Toggle preview panes.
+
+### Resource Lists (`buffers`, `oldfiles`, `diagnostics`)
+- `<CR>` or `l`: Select item and close.
+- `q`: Close window.
+- `[[` / `]]`: Jump between diagnostic groups.
+
+## 󰑭 Requirements
+- Neovim `0.11.0` or newer.
+- A Nerd Font for icons.
+
+## 󰑭 License
+Distributed under the MIT License. See `LICENSE` for more information.
