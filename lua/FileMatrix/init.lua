@@ -434,7 +434,19 @@ function M.fuzzy_files()
     end
     local files = vim.split(res.stdout, "\n", { trimempty = true })
     local function top(list) return vim.list_slice(list, 1, MAX_ROWS) end
+    local sel_ns = api.nvim_create_namespace("FileMatrix_sel")
     local v
+
+    -- paint the selected row ourselves, then force a cursor-aware redraw
+    local function flush()
+        api.nvim_buf_clear_namespace(v.buf, sel_ns, 0, -1)
+        local row = api.nvim_win_get_cursor(v.win)[1]
+        pcall(api.nvim_buf_set_extmark, v.buf, sel_ns, row - 1, 0,
+            { line_hl_group = "Visual", priority = 200 })
+        if not pcall(api.nvim__redraw, { win = v.win, cursor = true, flush = true }) then
+            vim.cmd.redraw()
+        end
+    end
 
     local function show(q)
         local matches = q == "" and files or vim.fn.matchfuzzy(files, q)
@@ -444,7 +456,7 @@ function M.fuzzy_files()
             title = ("files (%d/%d)"):format(#matches, #files), title_pos = "center",
             footer = " / " .. q .. " ", footer_pos = "left",
         })
-        vim.cmd.redraw()
+        flush()
         return #matches
     end
 
@@ -452,7 +464,7 @@ function M.fuzzy_files()
         local n = api.nvim_buf_line_count(v.buf)
         local row = math.min(math.max(api.nvim_win_get_cursor(v.win)[1] + d, 1), n)
         api.nvim_win_set_cursor(v.win, { row, 0 })
-        vim.cmd.redraw()
+        flush()
     end
 
     local function search()
