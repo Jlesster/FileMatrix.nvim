@@ -39,7 +39,13 @@ local defaults = {
             "CMakeLists.txt",
         },
     },
-    keys = { open = false, buffers = false, oldfiles = false, diagnostics = false }, -- e.g. open = "<leader>e"
+    keys = {
+        open = false,
+        files = false,
+        buffers = false,
+        oldfiles = false,
+        diagnostics = false
+    }, -- e.g. open = "<leader>e"
 }
 
 local cfg = vim.deepcopy(defaults)
@@ -486,7 +492,7 @@ function M.fuzzy_files()
         end,
         on_select = function (f) vim.cmd.edit({ args = { vim.fs.joinpath(cwd, f) } }) end,
         icons = true,
-        keys = { ["s"] = function() search() end },
+        keys = { ["/"] = function() search() end },
     })
 end
 
@@ -840,6 +846,7 @@ function M.setup(opts)
             local name = api.nvim_buf_get_name(cur)
             M.open(S[cur] and S[cur].dir or (name ~= "" and vim.fs.dirname(name)) or vim.fn.getcwd())
         end,
+        files = M.files,
         buffers = M.buffers,
         oldfiles = M.oldfiles,
         diagnostics = M.diagnostics,
